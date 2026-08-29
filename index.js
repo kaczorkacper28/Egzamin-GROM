@@ -10,6 +10,11 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const sessions = new Map();
 const results = new Map();
 
+// 80 pytań. Każde pytanie jest liczone do testu 70 pkt.
+const TEST_MAX = 70;
+const PRACTICAL_MAX = 30;
+const PASS_SCORE = 85;
+
 // 80 pytań. Egzamin dotyczy wyłącznie ERLC/RP: procedur serwera, komunikacji, jazdy, współpracy i fair play.
 const Q = [
 ["Co jest najważniejsze podczas egzaminu RP?",["Wygranie za wszelką cenę","Przestrzeganie regulaminu i dobre RP","Jak najszybsze strzelanie","Omijanie procedur"],1],
@@ -108,8 +113,23 @@ const commands = [
 ];
 
 async function register(){ const rest=new REST({version:"10"}).setToken(TOKEN); await rest.put(Routes.applicationGuildCommands(CLIENT_ID,GUILD_ID),{body:commands}); }
+
+// Przelicza 80 odpowiedzi testowych na dokładnie 70 pkt.
+// Wynik praktyczny jest osobno oceniany w skali 0-30 pkt.
+function calculateTestPoints(correctAnswers){
+  return Math.round((correctAnswers / Q.length) * TEST_MAX);
+}
+
+function getTotal(quiz, practical){
+  return quiz + (practical ?? 0);
+}
+
+function getStatus(total){
+  return total >= PASS_SCORE ? "✅ **ZALICZONY**" : "❌ **NIEZALICZONY**";
+}
+
 function panel(){
- return { embeds:[new EmbedBuilder().setColor(0x8b0000).setTitle("🇵🇱 EGZAMIN REKRUTACYJNY GROM — ERLC").setDescription("**POZIOM: EKSTREMALNY**\n\n80 pytań + 30 pkt zadań praktycznych.\n**Próg zaliczenia: 85/100 pkt.**\n\n❌ Exploity, MetaGaming, FailRP, PowerGaming lub celowe łamanie regulaminu = **automatyczne niezaliczenie**.\n\nKliknij przycisk, aby rozpocząć egzamin.").setFooter({text:"GROM • ERLC RP • System egzaminacyjny"})],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("grom_start").setLabel("Rozpocznij egzamin").setEmoji("🎯").setStyle(ButtonStyle.Danger))]};
+ return { embeds:[new EmbedBuilder().setColor(0x8b0000).setTitle("🇵🇱 EGZAMIN REKRUTACYJNY GROM — ERLC").setDescription("**POZIOM: EKSTREMALNY**\n\n80 pytań = **70 pkt** + zadania praktyczne = **30 pkt**.\n**Maksymalnie: 100 pkt. Próg zaliczenia: 85/100 pkt.**\n\n❌ Exploity, MetaGaming, FailRP, PowerGaming lub celowe łamanie regulaminu = **automatyczne niezaliczenie**.\n\nKliknij przycisk, aby rozpocząć egzamin.").setFooter({text:"GROM • ERLC RP • 70 pkt test + 30 pkt praktyka = 100 pkt"})],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("grom_start").setLabel("Rozpocznij egzamin").setEmoji("🎯").setStyle(ButtonStyle.Danger))]};
 }
 
 client.once("ready",async()=>{ console.log(`✅ ${client.user.tag} online`); try{await register(); console.log("✅ Komendy zarejestrowane");}catch(e){console.error(e);} });
@@ -119,8 +139,11 @@ client.on("interactionCreate",async i=>{
   if(i.commandName==="grom-egzamin") return i.reply({...panel(),ephemeral:false});
   if(i.commandName==="grom-reset"){sessions.delete(i.options.getUser("osoba").id);results.delete(i.options.getUser("osoba").id);return i.reply({content:`✅ Zresetowano egzamin dla <@${i.options.getUser("osoba").id}>.`,ephemeral:true});}
   if(i.commandName==="grom-wynik"){
-   const u=i.options.getUser("osoba"),p=i.options.getInteger("punkty"),r=results.get(u.id)||{quiz:0}; r.practical=p;r.total=r.quiz+p;results.set(u.id,r);
-   return i.reply({content:`📋 **Wynik GROM — <@${u.id}>**\n🧠 Test: **${r.quiz}/70**\n🔥 Praktyka: **${p}/30**\n🏆 Razem: **${r.total}/100**\n\n${r.total>=85?"✅ **ZALICZONY**":"❌ **NIEZALICZONY**"}`,ephemeral:false});
+   const u=i.options.getUser("osoba"),p=i.options.getInteger("punkty"),r=results.get(u.id)||{quiz:0};
+   r.practical=p;
+   r.total=getTotal(r.quiz,p);
+   results.set(u.id,r);
+   return i.reply({content:`📋 **Wynik GROM — <@${u.id}>**\n🧠 Test: **${r.quiz}/${TEST_MAX}**\n🔥 Praktyka: **${p}/${PRACTICAL_MAX}**\n🏆 Razem: **${r.total}/100**\n\n${getStatus(r.total)}`,ephemeral:false});
   }
  }
  if(!i.isButton()) return;
@@ -132,12 +155,17 @@ client.on("interactionCreate",async i=>{
   const s=sessions.get(i.user.id); if(!s)return i.reply({content:"❌ Nie masz aktywnego egzaminu.",ephemeral:true});
   const a=Number(i.customId.split("_")[2]),q=Q[s.n]; if(a===q[2])s.score++;
   s.n++;
-  if(s.n>=Q.length){sessions.delete(i.user.id);results.set(i.user.id,{quiz:s.score,practical:null,total:s.score});return i.update({embeds:[new EmbedBuilder().setColor(s.score>=60?0x57f287:0xed4245).setTitle("🏁 CZĘŚĆ TESTOWA ZAKOŃCZONA").setDescription(`Kandydat: <@${i.user.id}>\n🧠 Wynik: **${s.score}/80**\n\nKomisja musi teraz przyznać **0–30 pkt** za zadania praktyczne komendą \`/grom-wynik\`.\n\n**Próg końcowy: 85/100 pkt.**\nBłąd krytyczny = automatyczne niezaliczenie.`)],components:[]});}
+  if(s.n>=Q.length){
+   sessions.delete(i.user.id);
+   const quizPoints=calculateTestPoints(s.score);
+   results.set(i.user.id,{quiz:quizPoints,correct:s.score,total:quizPoints,practical:null});
+   return i.update({embeds:[new EmbedBuilder().setColor(0x8b0000).setTitle("🏁 CZĘŚĆ TESTOWA ZAKOŃCZONA").setDescription(`Kandydat: <@${i.user.id}>\n📝 Poprawne odpowiedzi: **${s.score}/${Q.length}**\n🧠 Wynik testu: **${quizPoints}/${TEST_MAX} pkt**\n\nKomisja musi teraz przyznać **0–30 pkt** za zadania praktyczne komendą \`/grom-wynik\`.\n\n**Maksymalny wynik: 100 pkt (70 test + 30 praktyka).**\n**Próg końcowy: 85/100 pkt.**\nBłąd krytyczny = automatyczne niezaliczenie.`)],components:[]});
+  }
   return sendQuestion(i);
  }
 });
 
-async function sendQuestion(i){const s=sessions.get(i.user.id),q=Q[s.n];const rows=new ActionRowBuilder().addComponents(q[1].map((x,k)=>new ButtonBuilder().setCustomId(`grom_ans_${k}`).setLabel(`${String.fromCharCode(65+k)}. ${x}`.slice(0,80)).setStyle(ButtonStyle.Secondary)));const e=new EmbedBuilder().setColor(0x8b0000).setTitle(`🇵🇱 GROM — Pytanie ${s.n+1}/80`).setDescription(`**${q[0]}**\n\n📊 Aktualne punkty: **${s.score}**`);return i.update({embeds:[e],components:[rows]});}
+async function sendQuestion(i){const s=sessions.get(i.user.id),q=Q[s.n];const rows=new ActionRowBuilder().addComponents(q[1].map((x,k)=>new ButtonBuilder().setCustomId(`grom_ans_${k}`).setLabel(`${String.fromCharCode(65+k)}. ${x}`.slice(0,80)).setStyle(ButtonStyle.Secondary)));const e=new EmbedBuilder().setColor(0x8b0000).setTitle(`🇵🇱 GROM — Pytanie ${s.n+1}/${Q.length}`).setDescription(`**${q[0]}**\n\n📊 Aktualne poprawne odpowiedzi: **${s.score}**`);return i.update({embeds:[e],components:[rows]});}
 
 process.on("unhandledRejection",e=>console.error(e));
 client.login(TOKEN);
