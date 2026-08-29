@@ -1,0 +1,13 @@
+{
+  "name": "egzamin-grom-erlc",
+  "version": "1.0.0",
+  "description": "System egzaminu rekrutacyjnego GROM dla ERLC RP",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.2.2"
+  }
+}
