@@ -4,7 +4,7 @@
   "description": "System egzaminu rekrutacyjnego GROM dla ERLC RP",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node -r ./channel.js index.js"
   },
   "dependencies": {
     "discord.js": "^14.25.1",
